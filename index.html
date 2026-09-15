@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulse Tetris — 本地 Top 10</title>
+  <style>
+    :root {
+      --bg: #0c1018;
+      --panel: #151b27;
+      --panel-2: #1c2433;
+      --line: #2a3446;
+      --ink: #e8edf7;
+      --muted: #8b97ad;
+      --accent: #5ee0c4;
+      --accent-dim: #2a6f63;
+      --warn: #f0b45a;
+      --danger: #e36b6b;
+      --well: #080b11;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(900px 480px at 12% -10%, #1a2a3d 0%, transparent 55%),
+        radial-gradient(700px 400px at 100% 0%, #1b2830 0%, transparent 50%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+    }
+
+    body {
+      padding: 24px 16px 40px;
+    }
+
+    .app {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.45rem;
+      letter-spacing: 0.04em;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .scorebox {
+      text-align: right;
+    }
+
+    .scorebox label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+    }
+
+    .scorebox strong {
+      font-size: 2rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      color: var(--warn);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    .board-wrap {
+      position: relative;
+      width: 280px;
+      background: var(--well);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: inset 0 0 0 1px #0008, 0 12px 40px #0006;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 280px;
+      height: 560px;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #080b11d0;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .overlay[hidden],
+    .modal-backdrop[hidden] {
+      display: none;
+    }
+
+    .overlay h2 {
+      margin: 0;
+      font-size: 1.6rem;
+    }
+
+    .overlay p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      min-height: 560px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: #1d4e46;
+      border-color: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    button:not(:disabled):hover {
+      filter: brightness(1.12);
+    }
+
+    button.is-muted {
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .status b { color: var(--ink); }
+
+    .keys {
+      margin: 0;
+      padding: 12px;
+      background: var(--panel-2);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.6;
+    }
+
+    .keys span {
+      display: inline-block;
+      min-width: 1.6em;
+      padding: 0 6px;
+      margin-right: 2px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      color: var(--ink);
+      font-size: 0.78rem;
+    }
+
+    .board-panel h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    .hint {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .lb {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--well);
+    }
+
+    .lb-head,
+    .lb-row {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 72px;
+      gap: 8px;
+      padding: 8px 10px;
+      font-size: 0.88rem;
+    }
+
+    .lb-head {
+      color: var(--muted);
+      background: #101622;
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+    }
+
+    .lb-row:nth-child(odd) { background: #0d121c; }
+
+    .lb-row .rank { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .lb-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lb-row .pts {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--warn);
+    }
+
+    .empty {
+      margin: 0;
+      padding: 28px 12px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: #05070ce6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 20;
+    }
+
+    .modal {
+      width: min(400px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 20px 60px #000a;
+    }
+
+    .modal h2 { margin: 0 0 6px; }
+    .modal .final { margin: 0 0 14px; color: var(--warn); }
+
+    label.field {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--well);
+      color: var(--ink);
+      font: inherit;
+    }
+
+    .field-error {
+      min-height: 1.3em;
+      margin: 6px 0 12px;
+      color: var(--danger);
+      font-size: 0.8rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    @media (max-width: 720px) {
+      header.top { align-items: flex-start; }
+      .layout { grid-template-columns: 1fr; justify-items: center; }
+      aside { width: min(100%, 420px); min-height: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div>
+        <h1>Pulse Tetris</h1>
+        <p class="subtitle">10×20 简易俄罗斯方块 · 本地 Top 10 · 合成音效</p>
+      </div>
+      <div class="scorebox">
+        <label>分数</label>
+        <strong id="score">0</strong>
+      </div>
+    </header>
+
+    <div class="layout">
+      <div class="board-wrap">
+        <canvas id="board" width="280" height="560" aria-label="游戏场地"></canvas>
+        <div id="overlay" class="overlay">
+          <h2 id="overlay-title">准备开始</h2>
+          <p id="overlay-text">点「开始」后用键盘操作</p>
+        </div>
+      </div>
+
+      <aside>
+        <div class="actions">
+          <button id="start" class="primary" type="button">开始</button>
+          <button id="restart" type="button">重新开始</button>
+          <button id="mute" type="button" aria-pressed="false">静音</button>
+        </div>
+        <p class="status">状态：<b id="phase">未开始</b></p>
+        <p class="keys">
+          <span>←</span><span>→</span> 移动　
+          <span>↓</span> 软降一格　
+          <span>↑</span> 顺时针旋转　
+          <span>空格</span> 硬降
+        </p>
+        <p class="hint" id="audio-hint">音效与循环 BGM 均为页内合成。点「开始」后才有声；可用「静音」同时关掉音效和背景乐。</p>
+        <section class="board-panel">
+          <h2>本地 Top 10</h2>
+          <p class="hint">仅保存在本机浏览器。清除站点数据会丢掉榜单。</p>
+          <div id="leaderboard" class="lb" aria-live="polite"></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <div id="name-modal" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title">进入排行榜</h2>
+      <p class="final">本局分数：<strong id="modal-score">0</strong></p>
+      <label class="field" for="player-name">名字（1–10 个字符）</label>
+      <input id="player-name" type="text" autocomplete="off" spellcheck="false">
+      <p id="name-error" class="field-error"></p>
+      <div class="modal-actions">
+        <button id="cancel-name" type="button">取消</button>
+        <button id="submit-name" class="primary" type="button" disabled>写入排行榜</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var COLS = 10;
+      var ROWS = 20;
+      var CELL = 28;
+      var GRAVITY_MS = 800;
+      var STORAGE_KEY = "pulse-tetris-leaderboard-v1";
+      var AUDIO_MUTE_KEY = "pulse-tetris-audio-muted-v1";
+      var MAX_ENTRIES = 10;
+      var LINE_SCORES = { 1: 100, 2: 300, 3: 500, 4: 800 };
+      var KICKS = [
+        [0, 0],
+        [-1, 0],
+        [1, 0],
+        [-2, 0],
+        [2, 0],
+        [0, -1]
+      ];
+      var GAME_KEYS = {
+        ArrowLeft: 1,
+        ArrowRight: 1,
+        ArrowDown: 1,
+        ArrowUp: 1,
+        " ": 1
+      };
+
+      var SHAPES = {
+        I: [
+          [[0, 1], [1, 1], [2, 1], [3, 1]],
+          [[2, 0], [2, 1], [2, 2], [2, 3]],
+          [[0, 2], [1, 2], [2, 2], [3, 2]],
+          [[1, 0], [1, 1], [1, 2], [1, 3]]
+        ],
+        O: [
+          [[1, 0], [2, 0], [1, 1], [2, 1]],
+          [[1, 0], [2, 0], [1, 1], [2, 1]],
+          [[1, 0], [2, 0], [1, 1], [2, 1]],
+          [[1, 0], [2, 0], [1, 1], [2, 1]]
+        ],
+        T: [
+          [[1, 0], [0, 1], [1, 1], [2, 1]],
+          [[1, 0], [1, 1], [2, 1], [1, 2]],
+          [[0, 1], [1, 1], [2, 1], [1, 2]],
+          [[1, 0], [0, 1], [1, 1], [1, 2]]
+        ],
+        S: [
+          [[1, 0], [2, 0], [0, 1], [1, 1]],
+          [[1, 0], [1, 1], [2, 1], [2, 2]],
+          [[1, 1], [2, 1], [0, 2], [1, 2]],
+          [[0, 0], [0, 1], [1, 1], [1, 2]]
+        ],
+        Z: [
+          [[0, 0], [1, 0], [1, 1], [2, 1]],
+          [[2, 0], [1, 1], [2, 1], [1, 2]],
+          [[0, 1], [1, 1], [1, 2], [2, 2]],
+          [[1, 0], [0, 1], [1, 1], [0, 2]]
+        ],
+        J: [
+          [[0, 0], [0, 1], [1, 1], [2, 1]],
+          [[1, 0], [2, 0], [1, 1], [1, 2]],
+          [[0, 1], [1, 1], [2, 1], [2, 2]],
+          [[1, 0], [1, 1], [0, 2], [1, 2]]
+        ],
+        L: [
+          [[2, 0], [0, 1], [1, 1], [2, 1]],
+          [[1, 0], [1, 1], [1, 2], [2, 2]],
+          [[0, 1], [1, 1], [2, 1], [0, 2]],
+          [[0, 0], [1, 0], [1, 1], [1, 2]]
+        ]
+      };
+
+      var COLORS = {
+        I: "#4fd6d1",
+        O: "#e6c85a",
+        T: "#b07de8",
+        S: "#6dcf7a",
+        Z: "#e36b6b",
+        J: "#5b8def",
+        L: "#e89a4d"
+      };
+
+      var canvas = document.getElementById("board");
+      var ctx = canvas.getContext("2d");
+      var scoreEl = document.getElementById("score");
+      var phaseEl = document.getElementById("phase");
+      var overlay = document.getElementById("overlay");
+      var overlayTitle = document.getElementById("overlay-title");
+      var overlayText = document.getElementById("overlay-text");
+      var startBtn = document.getElementById("start");
+      var restartBtn = document.getElementById("restart");
+      var muteBtn = document.getElementById("mute");
+      var leaderboardEl = document.getElementById("leaderboard");
+      var modal = document.getElementById("name-modal");
+      var modalScore = document.getElementById("modal-score");
+      var nameInput = document.getElementById("player-name");
+      var nameError = document.getElementById("name-error");
+      var submitName = document.getElementById("submit-name");
+      var cancelName = document.getElementById("cancel-name");
+
+      var state = "idle";
+      var grid = emptyGrid();
+      var score = 0;
+      var piece = null;
+      var bag = [];
+      var lastGravity = 0;
+      var pendingScore = 0;
+      var nameModalOpen = false;
+
+      var audio = {
+        ctx: null,
+        muted: false,
+        bgm: null
+      };
+
+      var BGM_MELODY = [
+        392.00, 493.88, 587.33, 493.88,
+        523.25, 392.00, 329.63, 392.00,
+        440.00, 523.25, 659.25, 523.25,
+        587.33, 493.88, 392.00, 329.63
+      ];
+      var BGM_BASS = [
+        196.00, 196.00, 196.00, 196.00,
+        174.61, 174.61, 130.81, 130.81,
+        146.83, 146.83, 174.61, 174.61,
+        196.00, 196.00, 164.81, 130.81
+      ];
+      var BGM_STEP = 0.16;
+
+      function readMuted() {
+        try {
+          return window.localStorage.getItem(AUDIO_MUTE_KEY) === "1";
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function writeMuted(muted) {
+        try {
+          window.localStorage.setItem(AUDIO_MUTE_KEY, muted ? "1" : "0");
+        } catch (err) {
+          /* 偏好写失败时本局开关仍可用 */
+        }
+      }
+
+      function syncMuteButton() {
+        muteBtn.textContent = audio.muted ? "取消静音" : "静音";
+        muteBtn.setAttribute("aria-pressed", audio.muted ? "true" : "false");
+        muteBtn.classList.toggle("is-muted", audio.muted);
+      }
+
+      function ensureAudio() {
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return null;
+          if (!audio.ctx) audio.ctx = new AC();
+          if (audio.ctx.state === "suspended") {
+            audio.ctx.resume().catch(function () { /* 未解锁则保持无声 */ });
+          }
+          return audio.ctx;
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function scheduleNote(ctx, dest, freq, when, dur, vol, type) {
+        var osc = ctx.createOscillator();
+        var g = ctx.createGain();
+        osc.type = type || "square";
+        osc.frequency.setValueAtTime(freq, when);
+        g.gain.setValueAtTime(0.0001, when);
+        g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0001), when + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+        osc.connect(g);
+        g.connect(dest);
+        osc.start(when);
+        osc.stop(when + dur + 0.02);
+      }
+
+      function beep(freq, dur, vol, type, delay) {
+        if (audio.muted) return;
+        var ctx = audio.ctx;
+        if (!ctx) return;
+        try {
+          scheduleNote(ctx, ctx.destination, freq, ctx.currentTime + (delay || 0), dur, vol, type);
+        } catch (err) {
+          /* 单次失败忽略 */
+        }
+      }
+
+      function playSfx(kind) {
+        if (audio.muted || !audio.ctx) return;
+        try {
+          if (kind === "move") {
+            beep(196, 0.032, 0.03, "square", 0);
+          } else if (kind === "rotate") {
+            beep(494, 0.042, 0.038, "square", 0);
+          } else if (kind === "lock") {
+            beep(165, 0.08, 0.11, "square", 0);
+            beep(110, 0.07, 0.07, "triangle", 0.025);
+          } else if (kind === "clear") {
+            beep(523.25, 0.09, 0.12, "square", 0);
+            beep(659.25, 0.09, 0.12, "square", 0.07);
+            beep(783.99, 0.12, 0.13, "square", 0.14);
+          } else if (kind === "tetris") {
+            beep(523.25, 0.1, 0.22, "square", 0);
+            beep(659.25, 0.1, 0.22, "square", 0.07);
+            beep(783.99, 0.1, 0.24, "square", 0.14);
+            beep(1046.5, 0.2, 0.28, "square", 0.21);
+            beep(1318.5, 0.16, 0.2, "triangle", 0.21);
+          } else if (kind === "over") {
+            beep(392, 0.16, 0.14, "sawtooth", 0);
+            beep(311.13, 0.18, 0.14, "sawtooth", 0.14);
+            beep(246.94, 0.22, 0.16, "sawtooth", 0.3);
+            beep(196, 0.35, 0.14, "triangle", 0.48);
+          }
+        } catch (err) {
+          /* SFX 失败不打断对局 */
+        }
+      }
+
+      function stopBgm() {
+        if (!audio.bgm) return;
+        try {
+          audio.bgm.stopped = true;
+          if (audio.bgm.timer != null) clearTimeout(audio.bgm.timer);
+          if (audio.ctx && audio.bgm.gain) {
+            audio.bgm.gain.gain.setValueAtTime(0, audio.ctx.currentTime);
+            audio.bgm.gain.disconnect();
+          }
+        } catch (err) {
+          /* 停止失败时丢掉句柄即可 */
+        }
+        audio.bgm = null;
+      }
+
+      function startBgm() {
+        stopBgm();
+        if (audio.muted) return;
+        var ctx = audio.ctx || ensureAudio();
+        if (!ctx) return;
+        try {
+          var master = ctx.createGain();
+          master.gain.value = 0.07;
+          master.connect(ctx.destination);
+          var handle = {
+            stopped: false,
+            timer: null,
+            gain: master,
+            step: 0,
+            nextTime: ctx.currentTime + 0.04
+          };
+          audio.bgm = handle;
+
+          function tick() {
+            if (!audio.bgm || audio.bgm.stopped) return;
+            var c = audio.ctx;
+            if (!c) return;
+            try {
+              while (handle.nextTime < c.currentTime + 0.28) {
+                var i = handle.step % BGM_MELODY.length;
+                scheduleNote(c, master, BGM_MELODY[i], handle.nextTime, BGM_STEP * 0.82, 0.55, "square");
+                if (handle.step % 2 === 0) {
+                  scheduleNote(c, master, BGM_BASS[i], handle.nextTime, BGM_STEP * 1.55, 0.26, "triangle");
+                }
+                handle.nextTime += BGM_STEP;
+                handle.step += 1;
+              }
+            } catch (err) {
+              /* 单拍失败继续排下一拍 */
+            }
+            handle.timer = setTimeout(tick, 80);
+          }
+          tick();
+        } catch (err) {
+          audio.bgm = null;
+        }
+      }
+
+      function setMuted(next) {
+        audio.muted = !!next;
+        writeMuted(audio.muted);
+        syncMuteButton();
+        if (audio.muted) {
+          stopBgm();
+        } else {
+          ensureAudio();
+          if (state === "playing") startBgm();
+        }
+      }
+
+      function emptyGrid() {
+        var g = [];
+        for (var r = 0; r < ROWS; r++) {
+          var row = [];
+          for (var c = 0; c < COLS; c++) row.push(null);
+          g.push(row);
+        }
+        return g;
+      }
+
+      function shuffle(list) {
+        var i, j, t;
+        for (i = list.length - 1; i > 0; i--) {
+          j = Math.floor(Math.random() * (i + 1));
+          t = list[i];
+          list[i] = list[j];
+          list[j] = t;
+        }
+        return list;
+      }
+
+      function nextType() {
+        if (!bag.length) {
+          bag = shuffle(["I", "O", "T", "S", "Z", "J", "L"]);
+        }
+        return bag.pop();
+      }
+
+      function cellsOf(p) {
+        return SHAPES[p.type][p.rot];
+      }
+
+      function collides(p) {
+        var cells = cellsOf(p);
+        for (var i = 0; i < cells.length; i++) {
+          var x = p.x + cells[i][0];
+          var y = p.y + cells[i][1];
+          if (x < 0 || x >= COLS || y >= ROWS) return true;
+          if (y >= 0 && grid[y][x]) return true;
+        }
+        return false;
+      }
+
+      function spawnPiece() {
+        var type = nextType();
+        var p = { type: type, rot: 0, x: type === "O" ? 4 : 3, y: 0 };
+        if (collides(p)) return null;
+        return p;
+      }
+
+      function tryMove(dx, dy) {
+        if (!piece) return false;
+        var next = { type: piece.type, rot: piece.rot, x: piece.x + dx, y: piece.y + dy };
+        if (collides(next)) return false;
+        piece = next;
+        return true;
+      }
+
+      function tryRotate() {
+        if (!piece) return false;
+        var rot = (piece.rot + 1) % 4;
+        for (var i = 0; i < KICKS.length; i++) {
+          var next = {
+            type: piece.type,
+            rot: rot,
+            x: piece.x + KICKS[i][0],
+            y: piece.y + KICKS[i][1]
+          };
+          if (!collides(next)) {
+            piece = next;
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function mergePiece() {
+        var cells = cellsOf(piece);
+        for (var i = 0; i < cells.length; i++) {
+          var x = piece.x + cells[i][0];
+          var y = piece.y + cells[i][1];
+          if (y >= 0 && y < ROWS && x >= 0 && x < COLS) {
+            grid[y][x] = piece.type;
+          }
+        }
+      }
+
+      function clearLines() {
+        var kept = [];
+        var cleared = 0;
+        for (var r = 0; r < ROWS; r++) {
+          var full = true;
+          for (var c = 0; c < COLS; c++) {
+            if (!grid[r][c]) { full = false; break; }
+          }
+          if (full) cleared += 1;
+          else kept.push(grid[r]);
+        }
+        while (kept.length < ROWS) {
+          var blank = [];
+          for (var i = 0; i < COLS; i++) blank.push(null);
+          kept.unshift(blank);
+        }
+        grid = kept;
+        if (cleared && LINE_SCORES[cleared]) score += LINE_SCORES[cleared];
+        scoreEl.textContent = String(score);
+        return cleared;
+      }
+
+      function lockPiece() {
+        mergePiece();
+        playSfx("lock");
+        var cleared = clearLines();
+        if (cleared >= 4) playSfx("tetris");
+        else if (cleared > 0) playSfx("clear");
+        piece = spawnPiece();
+        if (!piece) endGame();
+      }
+
+      function hardDrop() {
+        if (!piece) return;
+        while (tryMove(0, 1)) { /* drop */ }
+        lockPiece();
+      }
+
+      function setPhase(next, label) {
+        state = next;
+        phaseEl.textContent = label;
+      }
+
+      function showOverlay(title, text, visible) {
+        overlay.hidden = !visible;
+        overlayTitle.textContent = title;
+        overlayText.textContent = text;
+      }
+
+      function resetBoard() {
+        grid = emptyGrid();
+        score = 0;
+        bag = [];
+        piece = null;
+        lastGravity = performance.now();
+        scoreEl.textContent = "0";
+      }
+
+      function startGame() {
+        closeNameModal(false);
+        resetBoard();
+        stopBgm();
+        ensureAudio();
+        piece = spawnPiece();
+        if (!piece) {
+          endGame();
+          return;
+        }
+        setPhase("playing", "进行中");
+        showOverlay("", "", false);
+        startBtn.disabled = true;
+        restartBtn.disabled = false;
+        startBgm();
+      }
+
+      function endGame() {
+        piece = null;
+        stopBgm();
+        playSfx("over");
+        setPhase("over", "游戏结束");
+        showOverlay("游戏结束", "分数 " + score + " · 可重新开始", true);
+        startBtn.disabled = false;
+        restartBtn.disabled = false;
+        if (qualifiesForBoard(score)) openNameModal(score);
+      }
+
+      function loadLeaderboard() {
+        try {
+          var raw = window.localStorage.getItem(STORAGE_KEY);
+          if (!raw) return [];
+          var parsed = JSON.parse(raw);
+          if (!Array.isArray(parsed)) return [];
+          var clean = [];
+          for (var i = 0; i < parsed.length; i++) {
+            var e = parsed[i];
+            if (!e || typeof e.name !== "string") continue;
+            if (typeof e.score !== "number" || !isFinite(e.score)) continue;
+            if (typeof e.at !== "string") continue;
+            clean.push({ name: e.name, score: e.score, at: e.at });
+          }
+          return sortEntries(clean).slice(0, MAX_ENTRIES);
+        } catch (err) {
+          return [];
+        }
+      }
+
+      function saveLeaderboard(entries) {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
+        } catch (err) {
+          /* 写入失败时游戏仍可玩，只是这次不落盘 */
+        }
+      }
+
+      function sortEntries(entries) {
+        return entries.slice().sort(function (a, b) {
+          if (b.score !== a.score) return b.score - a.score;
+          if (a.at < b.at) return -1;
+          if (a.at > b.at) return 1;
+          return 0;
+        });
+      }
+
+      function qualifiesForBoard(s) {
+        var entries = loadLeaderboard();
+        if (entries.length < MAX_ENTRIES) return true;
+        return s > entries[entries.length - 1].score;
+      }
+
+      function renderLeaderboard() {
+        var entries = loadLeaderboard();
+        leaderboardEl.textContent = "";
+        if (!entries.length) {
+          var empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "暂无记录";
+          leaderboardEl.appendChild(empty);
+          return;
+        }
+        var head = document.createElement("div");
+        head.className = "lb-head";
+        head.innerHTML = "<span>排名</span><span>名字</span><span style=\"text-align:right\">分数</span>";
+        leaderboardEl.appendChild(head);
+        for (var i = 0; i < entries.length; i++) {
+          var row = document.createElement("div");
+          row.className = "lb-row";
+          var rank = document.createElement("span");
+          rank.className = "rank";
+          rank.textContent = String(i + 1);
+          var name = document.createElement("span");
+          name.className = "name";
+          name.textContent = entries[i].name;
+          var pts = document.createElement("span");
+          pts.className = "pts";
+          pts.textContent = String(entries[i].score);
+          row.appendChild(rank);
+          row.appendChild(name);
+          row.appendChild(pts);
+          leaderboardEl.appendChild(row);
+        }
+      }
+
+      function trimmedName() {
+        return nameInput.value.replace(/^\s+|\s+$/g, "");
+      }
+
+      function validateName() {
+        var name = trimmedName();
+        var ok = name.length >= 1 && name.length <= 10;
+        submitName.disabled = !ok;
+        if (name.length > 10) {
+          nameError.textContent = "名字不能超过 10 个字符";
+        } else if (nameInput.value.length > 0 && name.length === 0) {
+          nameError.textContent = "名字不能为空";
+        } else {
+          nameError.textContent = "";
+        }
+        return ok;
+      }
+
+      function openNameModal(s) {
+        pendingScore = s;
+        nameModalOpen = true;
+        modal.hidden = false;
+        modalScore.textContent = String(s);
+        nameInput.value = "";
+        nameError.textContent = "";
+        submitName.disabled = true;
+        nameInput.focus();
+      }
+
+      function closeNameModal(save) {
+        if (!nameModalOpen && modal.hidden) return;
+        if (save) {
+          var name = trimmedName();
+          if (name.length < 1 || name.length > 10) return;
+          var entries = loadLeaderboard();
+          entries.push({
+            name: name,
+            score: pendingScore,
+            at: new Date().toISOString()
+          });
+          saveLeaderboard(sortEntries(entries).slice(0, MAX_ENTRIES));
+          renderLeaderboard();
+        }
+        nameModalOpen = false;
+        modal.hidden = true;
+        nameInput.value = "";
+        pendingScore = 0;
+      }
+
+      function drawCell(x, y, color) {
+        var px = x * CELL;
+        var py = y * CELL;
+        ctx.fillStyle = color;
+        ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+        ctx.fillStyle = "rgba(255,255,255,0.16)";
+        ctx.fillRect(px + 2, py + 2, CELL - 4, 5);
+      }
+
+      function draw() {
+        ctx.fillStyle = "#080b11";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "#1a2230";
+        ctx.lineWidth = 1;
+        var r, c;
+        for (r = 0; r <= ROWS; r++) {
+          ctx.beginPath();
+          ctx.moveTo(0, r * CELL + 0.5);
+          ctx.lineTo(COLS * CELL, r * CELL + 0.5);
+          ctx.stroke();
+        }
+        for (c = 0; c <= COLS; c++) {
+          ctx.beginPath();
+          ctx.moveTo(c * CELL + 0.5, 0);
+          ctx.lineTo(c * CELL + 0.5, ROWS * CELL);
+          ctx.stroke();
+        }
+        for (r = 0; r < ROWS; r++) {
+          for (c = 0; c < COLS; c++) {
+            if (grid[r][c]) drawCell(c, r, COLORS[grid[r][c]]);
+          }
+        }
+        if (piece) {
+          var cells = cellsOf(piece);
+          for (var i = 0; i < cells.length; i++) {
+            var x = piece.x + cells[i][0];
+            var y = piece.y + cells[i][1];
+            if (y >= 0) drawCell(x, y, COLORS[piece.type]);
+          }
+        }
+      }
+
+      function onKey(e) {
+        if (nameModalOpen) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (validateName()) closeNameModal(true);
+            return;
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            closeNameModal(false);
+            return;
+          }
+          if (GAME_KEYS[e.key]) {
+            if (e.target !== nameInput) e.preventDefault();
+            return;
+          }
+          return;
+        }
+
+        if (!GAME_KEYS[e.key]) return;
+        e.preventDefault();
+        if (state !== "playing") return;
+
+        if (e.key === "ArrowLeft") {
+          if (tryMove(-1, 0)) playSfx("move");
+        } else if (e.key === "ArrowRight") {
+          if (tryMove(1, 0)) playSfx("move");
+        } else if (e.key === "ArrowDown") {
+          if (!tryMove(0, 1)) lockPiece();
+        } else if (e.key === "ArrowUp") {
+          if (tryRotate()) playSfx("rotate");
+        } else if (e.key === " ") {
+          hardDrop();
+        }
+        draw();
+      }
+
+      function loop(now) {
+        if (state === "playing" && !nameModalOpen) {
+          if (now - lastGravity >= GRAVITY_MS) {
+            lastGravity = now;
+            if (!tryMove(0, 1)) lockPiece();
+          }
+        }
+        draw();
+        requestAnimationFrame(loop);
+      }
+
+      startBtn.addEventListener("click", startGame);
+      restartBtn.addEventListener("click", function () {
+        if (state === "idle") return;
+        startGame();
+      });
+      muteBtn.addEventListener("click", function () {
+        ensureAudio();
+        setMuted(!audio.muted);
+      });
+      nameInput.addEventListener("input", validateName);
+      submitName.addEventListener("click", function () {
+        if (validateName()) closeNameModal(true);
+      });
+      cancelName.addEventListener("click", function () {
+        closeNameModal(false);
+      });
+      window.addEventListener("keydown", onKey);
+
+      restartBtn.disabled = true;
+      audio.muted = readMuted();
+      syncMuteButton();
+      renderLeaderboard();
+      draw();
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
