@@ -902,7 +902,7 @@
       function doGesture(action) {
         if (!gestureAllowed()) return false;
         var now = performance.now();
-        if (action !== "hard" && now - touch.lastAct < GESTURE_COOLDOWN_MS) return false;
+        if (action !== "hard" && touch.acted && now - touch.lastAct < GESTURE_COOLDOWN_MS) return false;
         if (action === "hard" && touch.hard) return false;
 
         var ok = false;
@@ -1340,6 +1340,25 @@
       renderLeaderboard();
       draw();
       requestAnimationFrame(loop);
+
+      if (/(?:^|[?&])test=1(?:&|$)/.test(String(location.search || ""))) {
+        window.__pulseTest = {
+          snapshot: function () {
+            return {
+              phase: state,
+              modal: nameModalOpen,
+              score: score,
+              muted: audio.muted,
+              piece: piece ? { type: piece.type, rot: piece.rot, x: piece.x, y: piece.y } : null,
+              playing: document.body.classList.contains("is-playing")
+            };
+          },
+          setNameModal: function (open) {
+            nameModalOpen = !!open;
+            modal.hidden = !open;
+          }
+        };
+      }
     })();
   </script>
 </body>
