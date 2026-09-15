@@ -490,6 +490,15 @@
       var GESTURE_COOLDOWN_MS = 85;
       var HARD_DIST = 118;
       var HARD_VEL = 0.78;
+      // Horizontal: 40% of viewport width ≈ 5 cells (center → edge on a 10-col board).
+      // ~20%+ screen remains as margin so the finger need not reach the bezels.
+      // hSwipeStep = (0.40 * width) / 5 ≈ 0.08 * width; first-step and repeat share it.
+      // Cells come from floor(|x - x0| / hSwipeStep) so 5 * step does not lose the last cell to float drift.
+      var H_SWIPE_VIEW_FRAC = 0.40;
+      var H_SWIPE_CELLS = 5;
+      var H_SWIPE_MIN = 18;
+      var H_SWIPE_MAX = 56;
+      var hSwipeStep = 34;
 
       var SHAPES = {
         I: [
@@ -584,6 +593,7 @@
         axis: null,
         accX: 0,
         accY: 0,
+        hMoved: 0,
         lastAct: 0,
         moved: false,
         hard: false,
@@ -910,6 +920,7 @@
         touch.axis = null;
         touch.accX = 0;
         touch.accY = 0;
+        touch.hMoved = 0;
         touch.moved = false;
         touch.hard = false;
         touch.acted = false;
@@ -919,11 +930,44 @@
         return state === "playing" && !nameModalOpen;
       }
 
+      function viewportSwipeWidth() {
+        var w = window.innerWidth;
+        if (!(w > 0) && boardWrap) w = boardWrap.clientWidth;
+        if (!(w > 0)) w = 390;
+        return w;
+      }
+
+      function updateSwipeMetrics() {
+        var step = (H_SWIPE_VIEW_FRAC * viewportSwipeWidth()) / H_SWIPE_CELLS;
+        if (step < H_SWIPE_MIN) step = H_SWIPE_MIN;
+        if (step > H_SWIPE_MAX) step = H_SWIPE_MAX;
+        hSwipeStep = step;
+      }
+
+      function horizWantedCells(totalDx) {
+        if (!(hSwipeStep > 0)) return 0;
+        var n = Math.floor((Math.abs(totalDx) + 1e-6) / hSwipeStep);
+        return totalDx < 0 ? -n : n;
+      }
+
+      function applyHorizontalTravel(totalDx) {
+        var want = horizWantedCells(totalDx);
+        while (touch.hMoved > want) {
+          if (!doGesture("left")) break;
+          touch.hMoved -= 1;
+        }
+        while (touch.hMoved < want) {
+          if (!doGesture("right")) break;
+          touch.hMoved += 1;
+        }
+      }
+
       function doGesture(action) {
         if (!gestureAllowed()) return false;
         if (touch.gen !== pieceGen) return false;
         var now = performance.now();
-        if (action !== "hard" && touch.acted && now - touch.lastAct < GESTURE_COOLDOWN_MS) return false;
+        // Horizontal repeats are distance-mapped (40% width / 5 cells); do not time-gate them.
+        if ((action === "rotate" || action === "soft") && touch.acted && now - touch.lastAct < GESTURE_COOLDOWN_MS) return false;
         if (action === "hard" && touch.hard) return false;
 
         var ok = false;
@@ -1235,6 +1279,7 @@
         touch.axis = null;
         touch.accX = 0;
         touch.accY = 0;
+        touch.hMoved = 0;
         touch.moved = false;
         touch.hard = false;
         touch.acted = false;
@@ -1269,11 +1314,7 @@
         }
 
         if (touch.axis === "x") {
-          if (touch.accX <= -SWIPE_STEP) {
-            if (doGesture("left")) touch.accX += SWIPE_REPEAT;
-          } else if (touch.accX >= SWIPE_STEP) {
-            if (doGesture("right")) touch.accX -= SWIPE_REPEAT;
-          }
+          applyHorizontalTravel(nx - touch.x0);
         } else if (touch.accY <= -SWIPE_STEP) {
           if (doGesture("rotate")) touch.accY += SWIPE_REPEAT;
         } else if (touch.accY >= SWIPE_STEP && !touch.hard) {
@@ -1308,9 +1349,8 @@
           } else if (!touch.acted && touch.axis === "y" && totalDy >= SWIPE_STEP) {
             if (shouldHardDrop(totalDy, dt)) doGesture("hard");
             else doGesture("soft");
-          } else if (!touch.acted && touch.axis === "x") {
-            if (totalDx <= -SWIPE_STEP) doGesture("left");
-            else if (totalDx >= SWIPE_STEP) doGesture("right");
+          } else if (touch.axis === "x") {
+            applyHorizontalTravel(totalDx);
           } else if (!touch.acted && touch.axis === "y" && totalDy <= -SWIPE_STEP) {
             doGesture("rotate");
           }
@@ -1350,6 +1390,11 @@
         closeNameModal(false);
       });
       window.addEventListener("keydown", onKey);
+      window.addEventListener("resize", updateSwipeMetrics);
+      window.addEventListener("orientationchange", function () {
+        updateSwipeMetrics();
+        setTimeout(updateSwipeMetrics, 200);
+      });
       boardWrap.addEventListener("touchstart", onTouchStart, { passive: false });
       boardWrap.addEventListener("touchmove", onTouchMove, { passive: false });
       boardWrap.addEventListener("touchend", onTouchEnd, { passive: false });
@@ -1358,6 +1403,7 @@
       document.addEventListener("gesturechange", onGestureZoom);
 
       restartBtn.disabled = true;
+      updateSwipeMetrics();
       audio.muted = readMuted();
       syncMuteButton();
       renderLeaderboard();
@@ -1374,7 +1420,9 @@
               muted: audio.muted,
               gen: pieceGen,
               piece: piece ? { type: piece.type, rot: piece.rot, x: piece.x, y: piece.y } : null,
-              playing: document.body.classList.contains("is-playing")
+              playing: document.body.classList.contains("is-playing"),
+              hSwipeStep: hSwipeStep,
+              innerWidth: window.innerWidth
             };
           },
           setNameModal: function (open) {
