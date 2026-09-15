@@ -493,6 +493,7 @@
       // Horizontal: 40% of viewport width ≈ 5 cells (center → edge on a 10-col board).
       // ~20%+ screen remains as margin so the finger need not reach the bezels.
       // hSwipeStep = (0.40 * width) / 5 ≈ 0.08 * width; first-step and repeat share it.
+      // Cells come from floor(|x - x0| / hSwipeStep) so 5 * step does not lose the last cell to float drift.
       var H_SWIPE_VIEW_FRAC = 0.40;
       var H_SWIPE_CELLS = 5;
       var H_SWIPE_MIN = 18;
@@ -592,6 +593,7 @@
         axis: null,
         accX: 0,
         accY: 0,
+        hMoved: 0,
         lastAct: 0,
         moved: false,
         hard: false,
@@ -918,6 +920,7 @@
         touch.axis = null;
         touch.accX = 0;
         touch.accY = 0;
+        touch.hMoved = 0;
         touch.moved = false;
         touch.hard = false;
         touch.acted = false;
@@ -939,6 +942,24 @@
         if (step < H_SWIPE_MIN) step = H_SWIPE_MIN;
         if (step > H_SWIPE_MAX) step = H_SWIPE_MAX;
         hSwipeStep = step;
+      }
+
+      function horizWantedCells(totalDx) {
+        if (!(hSwipeStep > 0)) return 0;
+        var n = Math.floor((Math.abs(totalDx) + 1e-6) / hSwipeStep);
+        return totalDx < 0 ? -n : n;
+      }
+
+      function applyHorizontalTravel(totalDx) {
+        var want = horizWantedCells(totalDx);
+        while (touch.hMoved > want) {
+          if (!doGesture("left")) break;
+          touch.hMoved -= 1;
+        }
+        while (touch.hMoved < want) {
+          if (!doGesture("right")) break;
+          touch.hMoved += 1;
+        }
       }
 
       function doGesture(action) {
@@ -1258,6 +1279,7 @@
         touch.axis = null;
         touch.accX = 0;
         touch.accY = 0;
+        touch.hMoved = 0;
         touch.moved = false;
         touch.hard = false;
         touch.acted = false;
@@ -1292,14 +1314,7 @@
         }
 
         if (touch.axis === "x") {
-          while (touch.accX <= -hSwipeStep) {
-            if (!doGesture("left")) break;
-            touch.accX += hSwipeStep;
-          }
-          while (touch.accX >= hSwipeStep) {
-            if (!doGesture("right")) break;
-            touch.accX -= hSwipeStep;
-          }
+          applyHorizontalTravel(nx - touch.x0);
         } else if (touch.accY <= -SWIPE_STEP) {
           if (doGesture("rotate")) touch.accY += SWIPE_REPEAT;
         } else if (touch.accY >= SWIPE_STEP && !touch.hard) {
@@ -1334,9 +1349,8 @@
           } else if (!touch.acted && touch.axis === "y" && totalDy >= SWIPE_STEP) {
             if (shouldHardDrop(totalDy, dt)) doGesture("hard");
             else doGesture("soft");
-          } else if (!touch.acted && touch.axis === "x") {
-            if (totalDx <= -hSwipeStep) doGesture("left");
-            else if (totalDx >= hSwipeStep) doGesture("right");
+          } else if (touch.axis === "x") {
+            applyHorizontalTravel(totalDx);
           } else if (!touch.acted && touch.axis === "y" && totalDy <= -SWIPE_STEP) {
             doGesture("rotate");
           }
