@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Pulse Tetris — 本地 Top 10</title>
   <style>
     :root {
@@ -30,10 +30,16 @@
         var(--bg);
       color: var(--ink);
       font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+      touch-action: manipulation;
+      overscroll-behavior: none;
     }
 
     body {
       padding: 24px 16px 40px;
+    }
+
+    body.is-playing {
+      overscroll-behavior: none;
     }
 
     .app {
@@ -94,12 +100,17 @@
       border-radius: 12px;
       box-shadow: inset 0 0 0 1px #0008, 0 12px 40px #0006;
       overflow: hidden;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
     canvas {
       display: block;
       width: 280px;
       height: 560px;
+      touch-action: none;
     }
 
     .overlay {
@@ -311,9 +322,73 @@
     }
 
     @media (max-width: 720px) {
-      header.top { align-items: flex-start; }
-      .layout { grid-template-columns: 1fr; justify-items: center; }
-      aside { width: min(100%, 420px); min-height: 0; }
+      body {
+        padding: 12px 10px 28px;
+        padding-left: max(10px, env(safe-area-inset-left));
+        padding-right: max(10px, env(safe-area-inset-right));
+      }
+
+      header.top {
+        align-items: flex-start;
+        margin-bottom: 12px;
+        gap: 10px;
+      }
+
+      h1 { font-size: 1.2rem; }
+      .subtitle { font-size: 0.8rem; }
+      .scorebox strong { font-size: 1.55rem; }
+
+      .layout {
+        grid-template-columns: 1fr;
+        justify-items: stretch;
+        gap: 14px;
+      }
+
+      .board-wrap {
+        width: clamp(200px, min(calc(100vw - 20px), calc((100dvh - 160px) * 0.5)), 280px);
+        margin: 0 auto;
+      }
+
+      canvas {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 2;
+      }
+
+      aside {
+        width: 100%;
+        min-height: 0;
+        padding: 12px;
+        gap: 12px;
+      }
+
+      .keys {
+        font-size: 0.8rem;
+        padding: 10px;
+      }
+
+      .lb {
+        max-height: min(280px, 38vh);
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+    }
+
+    @media (max-width: 720px) and (max-height: 500px) and (orientation: landscape) {
+      header.top { margin-bottom: 8px; }
+      .layout {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 12px;
+      }
+      .board-wrap {
+        width: clamp(160px, calc((100dvh - 72px) * 0.5), 220px);
+        margin: 0;
+      }
+      aside {
+        max-height: calc(100dvh - 56px);
+        overflow: auto;
+      }
+      .lb { max-height: min(180px, 46vh); }
     }
   </style>
 </head>
@@ -322,7 +397,7 @@
     <header class="top">
       <div>
         <h1>Pulse Tetris</h1>
-        <p class="subtitle">10×20 简易俄罗斯方块 · 本地 Top 10 · 合成音效</p>
+        <p class="subtitle">10×20 简易俄罗斯方块 · 本地 Top 10 · 合成音效 · 支持滑动</p>
       </div>
       <div class="scorebox">
         <label>分数</label>
@@ -331,11 +406,11 @@
     </header>
 
     <div class="layout">
-      <div class="board-wrap">
+      <div class="board-wrap" id="board-wrap">
         <canvas id="board" width="280" height="560" aria-label="游戏场地"></canvas>
         <div id="overlay" class="overlay">
           <h2 id="overlay-title">准备开始</h2>
-          <p id="overlay-text">点「开始」后用键盘操作</p>
+          <p id="overlay-text">点「开始」后用键盘或盘面滑动操作</p>
         </div>
       </div>
 
@@ -351,6 +426,10 @@
           <span>↓</span> 软降一格　
           <span>↑</span> 顺时针旋转　
           <span>空格</span> 硬降
+          <br>
+          左/右滑 移动一格　上滑或点按盘面 旋转
+          <br>
+          短下滑 软降一格　长滑或快滑向下 硬降
         </p>
         <p class="hint" id="audio-hint">音效与循环 BGM 均为页内合成。点「开始」后才有声；可用「静音」同时关掉音效和背景乐。</p>
         <section class="board-panel">
@@ -403,6 +482,14 @@
         ArrowUp: 1,
         " ": 1
       };
+      var SWIPE_LOCK = 22;
+      var SWIPE_STEP = 34;
+      var SWIPE_REPEAT = 46;
+      var TAP_SLACK = 16;
+      var TAP_MS = 320;
+      var GESTURE_COOLDOWN_MS = 85;
+      var HARD_DIST = 118;
+      var HARD_VEL = 0.78;
 
       var SHAPES = {
         I: [
@@ -460,6 +547,7 @@
       };
 
       var canvas = document.getElementById("board");
+      var boardWrap = document.getElementById("board-wrap");
       var ctx = canvas.getContext("2d");
       var scoreEl = document.getElementById("score");
       var phaseEl = document.getElementById("phase");
@@ -485,6 +573,23 @@
       var lastGravity = 0;
       var pendingScore = 0;
       var nameModalOpen = false;
+      var pieceGen = 0;
+      var touch = {
+        id: null,
+        x0: 0,
+        y0: 0,
+        t0: 0,
+        x: 0,
+        y: 0,
+        axis: null,
+        accX: 0,
+        accY: 0,
+        lastAct: 0,
+        moved: false,
+        hard: false,
+        acted: false,
+        gen: 0
+      };
 
       var audio = {
         ctx: null,
@@ -784,6 +889,7 @@
         if (cleared >= 4) playSfx("tetris");
         else if (cleared > 0) playSfx("clear");
         piece = spawnPiece();
+        pieceGen += 1;
         if (!piece) endGame();
       }
 
@@ -796,6 +902,76 @@
       function setPhase(next, label) {
         state = next;
         phaseEl.textContent = label;
+        document.body.classList.toggle("is-playing", next === "playing");
+      }
+
+      function resetTouch() {
+        touch.id = null;
+        touch.axis = null;
+        touch.accX = 0;
+        touch.accY = 0;
+        touch.moved = false;
+        touch.hard = false;
+        touch.acted = false;
+      }
+
+      function gestureAllowed() {
+        return state === "playing" && !nameModalOpen;
+      }
+
+      function doGesture(action) {
+        if (!gestureAllowed()) return false;
+        if (touch.gen !== pieceGen) return false;
+        var now = performance.now();
+        if (action !== "hard" && touch.acted && now - touch.lastAct < GESTURE_COOLDOWN_MS) return false;
+        if (action === "hard" && touch.hard) return false;
+
+        var ok = false;
+        if (action === "left") {
+          if (tryMove(-1, 0)) {
+            playSfx("move");
+            ok = true;
+          }
+        } else if (action === "right") {
+          if (tryMove(1, 0)) {
+            playSfx("move");
+            ok = true;
+          }
+        } else if (action === "soft") {
+          if (!tryMove(0, 1)) lockPiece();
+          ok = true;
+        } else if (action === "hard") {
+          hardDrop();
+          touch.hard = true;
+          ok = true;
+        } else if (action === "rotate") {
+          if (tryRotate()) {
+            playSfx("rotate");
+            ok = true;
+          }
+        }
+        if (ok) {
+          touch.lastAct = now;
+          touch.acted = true;
+          draw();
+        }
+        return ok;
+      }
+
+      function touchPoint(e, id) {
+        var list = e.changedTouches && e.changedTouches.length ? e.changedTouches : e.touches;
+        if (!list || !list.length) return null;
+        if (id == null) return list[0];
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].identifier === id) return list[i];
+        }
+        return null;
+      }
+
+      function shouldHardDrop(dy, dt) {
+        if (dy < SWIPE_STEP) return false;
+        var vel = dy / Math.max(dt, 1);
+        return dy >= HARD_DIST || vel >= HARD_VEL;
       }
 
       function showOverlay(title, text, visible) {
@@ -819,6 +995,7 @@
         stopBgm();
         ensureAudio();
         piece = spawnPiece();
+        pieceGen += 1;
         if (!piece) {
           endGame();
           return;
@@ -1045,6 +1222,106 @@
         draw();
       }
 
+      function onTouchStart(e) {
+        if (!gestureAllowed()) return;
+        if (touch.id != null) return;
+        var p = touchPoint(e, null);
+        if (!p) return;
+        e.preventDefault();
+        touch.id = p.identifier;
+        touch.x0 = touch.x = p.clientX;
+        touch.y0 = touch.y = p.clientY;
+        touch.t0 = performance.now();
+        touch.axis = null;
+        touch.accX = 0;
+        touch.accY = 0;
+        touch.moved = false;
+        touch.hard = false;
+        touch.acted = false;
+        touch.gen = pieceGen;
+      }
+
+      function onTouchMove(e) {
+        if (gestureAllowed()) e.preventDefault();
+        if (touch.id == null) return;
+        var p = touchPoint(e, touch.id);
+        if (!p) return;
+        if (!gestureAllowed()) return;
+
+        var nx = p.clientX;
+        var ny = p.clientY;
+        var dx = nx - touch.x;
+        var dy = ny - touch.y;
+        touch.x = nx;
+        touch.y = ny;
+        touch.accX += dx;
+        touch.accY += dy;
+
+        var adx = Math.abs(nx - touch.x0);
+        var ady = Math.abs(ny - touch.y0);
+        if (adx > TAP_SLACK || ady > TAP_SLACK) touch.moved = true;
+
+        if (!touch.axis) {
+          if (adx < SWIPE_LOCK && ady < SWIPE_LOCK) return;
+          touch.axis = adx >= ady ? "x" : "y";
+          touch.accX = nx - touch.x0;
+          touch.accY = ny - touch.y0;
+        }
+
+        if (touch.axis === "x") {
+          if (touch.accX <= -SWIPE_STEP) {
+            if (doGesture("left")) touch.accX += SWIPE_REPEAT;
+          } else if (touch.accX >= SWIPE_STEP) {
+            if (doGesture("right")) touch.accX -= SWIPE_REPEAT;
+          }
+        } else if (touch.accY <= -SWIPE_STEP) {
+          if (doGesture("rotate")) touch.accY += SWIPE_REPEAT;
+        } else if (touch.accY >= SWIPE_STEP && !touch.hard) {
+          var dt = performance.now() - touch.t0;
+          var totalDy = ny - touch.y0;
+          if (shouldHardDrop(totalDy, dt)) {
+            doGesture("hard");
+            touch.accY = 0;
+          } else if (doGesture("soft")) {
+            touch.accY -= SWIPE_REPEAT;
+          }
+        }
+      }
+
+      function onTouchEnd(e) {
+        if (touch.id == null) return;
+        var p = touchPoint(e, touch.id);
+        if (!p && e.type !== "touchcancel") return;
+        if (gestureAllowed()) e.preventDefault();
+
+        if (gestureAllowed() && !touch.hard) {
+          var endX = p ? p.clientX : touch.x;
+          var endY = p ? p.clientY : touch.y;
+          var dt = performance.now() - touch.t0;
+          var totalDx = endX - touch.x0;
+          var totalDy = endY - touch.y0;
+          var adx = Math.abs(totalDx);
+          var ady = Math.abs(totalDy);
+
+          if (!touch.acted && !touch.moved && adx <= TAP_SLACK && ady <= TAP_SLACK && dt <= TAP_MS) {
+            doGesture("rotate");
+          } else if (!touch.acted && touch.axis === "y" && totalDy >= SWIPE_STEP) {
+            if (shouldHardDrop(totalDy, dt)) doGesture("hard");
+            else doGesture("soft");
+          } else if (!touch.acted && touch.axis === "x") {
+            if (totalDx <= -SWIPE_STEP) doGesture("left");
+            else if (totalDx >= SWIPE_STEP) doGesture("right");
+          } else if (!touch.acted && touch.axis === "y" && totalDy <= -SWIPE_STEP) {
+            doGesture("rotate");
+          }
+        }
+        resetTouch();
+      }
+
+      function onGestureZoom(e) {
+        if (state === "playing" && !nameModalOpen) e.preventDefault();
+      }
+
       function loop(now) {
         if (state === "playing" && !nameModalOpen) {
           if (now - lastGravity >= GRAVITY_MS) {
@@ -1073,6 +1350,12 @@
         closeNameModal(false);
       });
       window.addEventListener("keydown", onKey);
+      boardWrap.addEventListener("touchstart", onTouchStart, { passive: false });
+      boardWrap.addEventListener("touchmove", onTouchMove, { passive: false });
+      boardWrap.addEventListener("touchend", onTouchEnd, { passive: false });
+      boardWrap.addEventListener("touchcancel", onTouchEnd, { passive: false });
+      document.addEventListener("gesturestart", onGestureZoom);
+      document.addEventListener("gesturechange", onGestureZoom);
 
       restartBtn.disabled = true;
       audio.muted = readMuted();
@@ -1080,6 +1363,31 @@
       renderLeaderboard();
       draw();
       requestAnimationFrame(loop);
+
+      if (/(?:^|[?&])test=1(?:&|$)/.test(String(location.search || ""))) {
+        window.__pulseTest = {
+          snapshot: function () {
+            return {
+              phase: state,
+              modal: nameModalOpen,
+              score: score,
+              muted: audio.muted,
+              gen: pieceGen,
+              piece: piece ? { type: piece.type, rot: piece.rot, x: piece.x, y: piece.y } : null,
+              playing: document.body.classList.contains("is-playing")
+            };
+          },
+          setNameModal: function (open) {
+            nameModalOpen = !!open;
+            modal.hidden = !open;
+          },
+          settle: function () {
+            if (!piece) return;
+            while (tryMove(0, 1)) { /* drop to rest */ }
+            draw();
+          }
+        };
+      }
     })();
   </script>
 </body>
